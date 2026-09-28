@@ -110,6 +110,7 @@ def validate_prd(content):
     root = Tree(content).root
     h2 = [n.text().strip() for n in root.find("h2")]
     errors = []
+    warnings = []
 
     # ---- 1. 核心章节与独立性 ----
     for name in CORE_SECTIONS:
@@ -228,6 +229,190 @@ def validate_prd(content):
         if heads != ["用户结果", "衡量指标", "统计口径", "预期方向", "目标值"]:
             errors.append("goal-table 表头必须为：用户结果、衡量指标、统计口径、预期方向、目标值")
 
+    # ---- 9. BLOCK-001：需求概述含疑似单页细节未下沉（逐字段映射表/逐状态用户可见内容） ----
+    section_of = _section_of(root)
+    for h3 in root.find("h3"):
+        section_title = h3.text().strip()
+        if not any(k in section_title for k in ("纵向样板", "字段映射", "用户可见", "办理链路", "状态")):
+            continue
+        # 找这个h3之后到下一个h3/h2之间的所有table tr文本
+        bucket = []
+        cursor = h3
+        while True:
+            cursor = cursor.parent and next(
+                (s for s in cursor.parent.children[cursor.parent.children.index(cursor)+1:]
+                 if isinstance(s, Node)), None
+            ) if hasattr(h3, "parent") and h3.parent else None
+            if not cursor:
+                break
+            if cursor.tag in ("h3", "h2"):
+                break
+            if cursor.tag == "table":
+                for tr in cursor.find("tr"):
+                    tds = [c.text().strip() for c in tr.children if isinstance(c, Node) and c.tag == "td"]
+                    if not tds:
+                        continue
+                    bucket.append("｜".join(tds))
+            else:
+                bucket.append(cursor.text())
+        text_block = "\n".join(bucket)
+        # 逐字段映射表（典型标签B）：出现表单字段名且含"候选/来源/推断/未验证"
+        field_keywords = ("费用类型", "发生日期", "金额", "币种", "事由", "发票", "附件",
+                          "计划名称", "描述", "时间", "重复", "老师", "学生", "科目",
+                          "授课方式", "教学模式", "地点", "课室", "提醒")
+        field_matches = sum(1 for k in field_keywords if k in text_block)
+        if field_matches >= 4:
+            errors.append(
+                "BLOCK-001：需求概述「" + section_title + "」疑似包含逐字段映射表（命中"
+                + str(field_matches) + "个字段关键词），属于单页专属细节（标签B），"
+                "应下沉到详细方案 scheme-table 对应行的描述列；需求概述本节只保留"
+                "「详见详细方案6.x.x」一行占位引用，跨页共享规则（标签A）才留在此处。"
+            )
+        # 逐状态用户可见内容+系统转移（典型标签B）
+        step_keywords = ("路由候选", "可用性闸口", "提取与补问", "草稿预览",
+                         "明确确认", "执行与核实", "暂停与续办", "用户可见内容",
+                         "系统判断与转移条件", "提取与补问", "结果待核实")
+        step_matches = sum(1 for k in step_keywords if k in text_block)
+        if step_matches >= 3 and field_matches < 4:
+            errors.append(
+                "BLOCK-001：需求概述「" + section_title + "」疑似包含逐状态的用户可见"
+                "内容/转移条件（命中" + str(step_matches) + "个状态关键词），属于单页"
+                "专属细节（标签B），应拆成多行进入详细方案scheme-table，每行对应一个"
+                "状态；需求概述本节只保留跨页共享规则（标签A）+ 占位引用。"
+            )
+
+    # ---- 10. BLOCK-003：必填「风险与应对」卡片少于3条或仍含模板话术 ----
+    risk_cards = []
+    for div in root.find("div"):
+        cls = div.attrs.get("class", "")
+        if "risk-card" in cls and "required-block" in cls:
+            risk_cards.append(div)
+    if not risk_cards:
+        # 旧版骨架没有required-block时，尝试找原文案写的risk-card，若内容写的是"本期不做什么"也不算真正的风险卡
+        for div in root.find("div", "risk-card"):
+            first_b = div.find("b")
+            if first_b and "不做" in first_b[0].text() if first_b else False:
+                continue
+            risk_cards.append(div)
+    if risk_cards:
+        for rc in risk_cards:
+            total_li = rc.find("li")
+            valid = [li for li in total_li if "请填" not in li.text()]
+            if len(valid) < 3:
+                errors.append(
+                    "BLOCK-003：「风险与应对」是必填块，至少写3条和当前项目强相关的真实"
+                    "风险（不能写『进度风险』这种空泛模板，要写触发条件+应对方案+Owner）。"
+                    "当前只识别到" + str(len(valid)) + "条有效。"
+                )
+    # 另外校验：scope-card后必须紧跟out-of-scope-card（或旧risk-card但内容写不做），再紧跟真正的风险卡
+    scope_divs = root.find("div", "scope-card")
+    if scope_divs:
+        scope_parent = scope_divs[0].parent
+        if scope_parent:
+            idx_scope = scope_parent.children.index(scope_divs[0])
+            has_out = False
+            has_real_risk = False
+            for sib in scope_parent.children[idx_scope + 1:idx_scope + 6]:
+                if isinstance(sib, Node) and sib.tag == "div":
+                    cls = sib.attrs.get("class", "")
+                    fb = sib.find("b")
+                    fb_txt = fb[0].text() if fb else ""
+                    if "out-of-scope-card" in cls or ("risk-card" in cls and "不做" in fb_txt):
+                        has_out = True
+                    elif "risk-card" in cls and "不做" not in fb_txt and ("风险" in fb_txt or "应对" in fb_txt or "⚠️" in fb_txt):
+                        has_real_risk = True
+            if scope_divs and not (has_out and has_real_risk):
+                errors.append(
+                    "BLOCK-003：需求概述需要3张独立卡片：本期范围(scope-card) → 本期不做什么"
+                    "(out-of-scope-card) → 风险与应对(风险+⚠️标题的risk-card)。当前缺少真正的"
+                    "『风险与应对』独立块。旧骨架把『本期不做什么』误用了risk-card类名，会和"
+                    "真正的风险块视觉混淆，请升级骨架模板用out-of-scope-card区分。"
+                )
+
+    # §11 BLOCK-004：AI产品PRD强制骨架必填AI-1~AI-4 四块（QAPractices AI Testing Checklist 硬性检查）
+    # 触发条件：PRD 全局文本中出现 AI 类关键词 ≥3 次
+    AI_KEYWORDS = ("agent", "llm", "大模型", "prompt", "rag", "gpt", "幻觉",
+                   "模型调用", "模型版本", "置信度", "embedding", "向量库",
+                   "人工复核", "低置信度", "token预算")
+
+    def _has_ai_intent(text: str) -> bool:
+        lowered = text.lower()
+        return sum(1 for kw in AI_KEYWORDS if kw.lower() in lowered) >= 3
+
+    has_ai = _has_ai_intent(content)
+
+    if has_ai:
+        ai_card_specs = [
+            ("ai-boundary-card",      "【AI-1 模型选型】"),
+            ("ai-hallucination-card", "【AI-2 幻觉兜底】"),
+            ("ai-safety-card",        "【AI-3 注入防护&PII】"),
+            ("ai-eval-card",          "【AI-4 评测方案】"),
+        ]
+        missing_cards: list[str] = []
+        card_refs: dict[str, Node] = {}
+        for cls_name, label in ai_card_specs:
+            found = root.find("div", cls_name)
+            if not found:
+                missing_cards.append(label)
+            else:
+                card_refs[cls_name] = found[0]
+        if missing_cards:
+            errors.append(
+                "BLOCK-004：检测到这是AI产品PRD（出现LLM/Prompt/RAG/Agent等关键词 ≥3 次），"
+                "但缺失AI专属必填块：缺 " + " / ".join(missing_cards) + "。"
+                "必须补齐四块（模板里有AI-1~AI-4，位置在详细方案后）。"
+                "普通SaaS产品：把AI类关键词删掉即可豁免此检查。"
+            )
+        # 幻觉卡：至少出现「置信度 / confidence」和「拒绝话术 / 人工 / HITL」
+        halluc = card_refs.get("ai-hallucination-card")
+        if halluc is not None:
+            txt = halluc.text()
+            if ("置信度" not in txt) and ("confidence" not in txt.lower()):
+                errors.append(
+                    "BLOCK-004：AI-2 幻觉兜底块必须明确写「置信度阈值」（例如 字段级 confidence ≥0.82）。"
+                    "没有阈值就无法判断什么时候该走兜底。"
+                )
+            if not any(k in txt for k in ("拒绝话术", "人工", "HITL", "升级工单", "转人工")):
+                errors.append(
+                    "BLOCK-004：AI-2 幻觉兜底块必须明确写「信息不足时的拒绝话术/低置信度UI/人工升级路由」三选一至少一个，"
+                    "否则「出问题了怎么办」这件事就没闭环。"
+                )
+        # 评测卡：黄金测试集表至少3个数据行（header不算）
+        eval_card = card_refs.get("ai-eval-card")
+        if eval_card is not None:
+            rows = eval_card.find("tr")
+            real = sum(1 for tr in rows if tr.find("td"))
+            if real < 3:
+                errors.append(
+                    "BLOCK-004：AI-4 评测方案至少填3条（黄金测试集条目数×通过率×抽样复审比例）。"
+                    "3条以下上线后没有评测基线，属于盲人开车。"
+                )
+
+    # §12 WARN-005：业务任务卡（codex P3-1）。R≥5条的大需求建议启用task-card，不阻塞仅提醒
+    overview_tbl = root.find("table", "overview-table")
+    req_count = 0
+    if overview_tbl:
+        for tbl in (overview_tbl if isinstance(overview_tbl, list) else [overview_tbl]):
+            for tr in tbl.find("tr"):
+                if tr.find("td"):
+                    req_count += 1
+    if req_count >= 5:
+        task_div = root.find("div", "task-card")
+        task_rows = 0
+        if task_div:
+            for tdiv in (task_div if isinstance(task_div, list) else [task_div]):
+                for tr in tdiv.find("tr"):
+                    if tr.find("td"):
+                        task_rows += 1
+        need = max(1, round(req_count * 0.5))
+        if task_rows < need:
+            warnings.append(
+                f"WARN-005：需求条目数 {req_count} ≥ 5，建议启用 task-card 业务任务卡，至少填 {need} 条。"
+                "缺任务卡易出现「功能写了但操作角色/触发条件/异常回退/成功凭证未闭环」。"
+            )
+
+    for w in warnings:
+        print("⚠️  " + w)
     if errors:
         raise ValueError("PRD 格式检查未通过：\n" + "\n".join(dict.fromkeys(errors)))
     return True

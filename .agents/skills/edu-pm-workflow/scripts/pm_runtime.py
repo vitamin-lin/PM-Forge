@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 from urllib.request import ProxyHandler, build_opener
 
-VERSION = "3.3.1"
+VERSION = "3.3.0"
 PORTS_SCHEME = "deterministic-v2"
 PORT_FLOOR = 20000
 PORT_SPAN = 12767  # 20000..32766，+1 后仍不超过 32767

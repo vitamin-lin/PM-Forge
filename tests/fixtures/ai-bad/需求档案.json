@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0", "requirement_id": "REQ-AI-001", "title": "AI报销单智能体",
+  "stage": "ready", "created_at": "2026-09-28T00:00:00Z", "updated_at": "2026-09-28T00:00:00Z",
+  "sources": [{"id":"SRC-001","classification":"evidence","kind":"user_story","source_ref":"-","collected_at":"2026-09-28","summary":"财务想自动识别发票"}],
+  "requirements": [{"id":"R-001","summary":"发票识别自动填报销单","source_ids":["SRC-001"],"acceptance_ids":["A-001"],"metric_ids":["M-001"]}],
+  "metrics": [{"id":"M-001","name":"OCR识别率","definition":"字段准确率","baseline_plan":"黄金测试集跑","baseline":null,"target":0.99,"window":"7d","source_ref":null,"result":null}],
+  "acceptance": [{"id":"A-001","requirement_id":"R-001","scenario":"正常发票上传","expected_result":"字段自动填对","status":"pending","evidence_ref":null,"checked_at":null}],
+  "open_questions": [{"id":"Q-001","question":"模型选型用哪个","status":"closed","owner":"产品","created_at":"2026-09-28T00:00:00Z","tags":[]}],
+  "artifacts": {"prd":"需求文档/ai-PRD.html","prototype":"原型/ai.html"},
+  "decisions": []
+}

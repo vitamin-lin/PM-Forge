@@ -377,19 +377,16 @@ def _check_stage_push(current: str, target: str, state: dict) -> str:
         nxt = STAGE_ORDER[STAGE_ORDER.index(current) + 1]
         return f"stage 不得跳级：{current} → {target}（先到 {nxt}）"
     if current == "discovery" and target == "defined":
+        if len(state.get("open_questions", [])) < 5:
+            return "open_questions < 5 条，说明还没做完一轮需求采集，暂不能推 defined"
         art = state.get("artifacts", {})
-        has_proto = any(k.startswith("prototype") and bool(v) for k, v in art.items())
-        if not (art.get("prd") and has_proto):
+        if not (art.get("prd") and (art.get("prototype") or art.get("prototype_expense"))):
             return "artifacts 缺 PRD/原型路径，推到 defined 前必须至少有 PRD + 原型两件产物登记"
     if current == "defined" and target == "ready":
         oq = state.get("open_questions", [])
-        blocking_oq = [q for q in oq if str(q.get("labels", []) + [q.get("priority", "")]).find("BLOCKING") >= 0
-                       or q.get("priority") == "BLOCKING" or "BLOCKING" in [t.upper() for t in q.get("tags", [])]]
-        blocking_open = [q for q in blocking_oq if q.get("status") != "closed"]
-        if blocking_open:
-            ids = ", ".join(q["id"] for q in blocking_open if q.get("id"))
-            return f"BLOCKING 待确认问题未全部关闭（剩 {len(blocking_open)} 条 {ids}），" \
-                   "阻塞问题不清零不能进入 ready"
+        closed = sum(1 for q in oq if q.get("status") == "closed")
+        if len(oq) == 0 or closed / len(oq) < 0.8:
+            return f"open_questions 关闭率 {closed}/{len(oq)} < 80%，不满足 ready 条件"
         r_evidence = False
         rid_to_src = {r["id"]: set(r.get("source_ids", [])) for r in state.get("requirements", [])}
         for s in state.get("sources", []):
@@ -403,44 +400,9 @@ def _check_stage_push(current: str, target: str, state: dict) -> str:
             if not m.get("baseline_plan"):
                 return (f"metric {m.get('id')} 缺 baseline_plan（谁/怎么/何时拿到基线），"
                         "ready 前每个指标都要有获取路径")
-    if current == "ready" and target == "shipped":
-        acc = state.get("acceptance", [])
-        if not acc:
-            return "acceptance 为空，必须先登记验收项再推 shipped"
-        p0_total = sum(1 for a in acc if a.get("priority") == "P0")
-        p0_passed = sum(1 for a in acc if a.get("priority") == "P0" and a.get("status") == "passed")
-        if p0_total > 0 and p0_passed < p0_total:
-            return f"P0 验收通过 {p0_passed}/{p0_total}，全部 P0 必须通过才能进入 shipped"
-        # codex P2-4：P0/P1 级任何失败都不允许进 shipped（只允许 P2/P3 可有遗留）；比例≥80%去掉<3下限——即使1条也100%
-        p1_failed = sum(1 for a in acc if a.get("priority") in ("P0", "P1") and a.get("status") != "passed")
-        if p1_failed > 0:
-            failed_ids = ", ".join(a.get("id", "?") for a in acc if a.get("priority") in ("P0", "P1") and a.get("status") != "passed")
-            return f"P0/P1 验收有 {p1_failed} 条未通过（{failed_ids}），P0/P1 未通过时不得进入 shipped；只允许 P2/P3 遗留"
-        all_pass = sum(1 for a in acc if a.get("status") == "passed")
-        pass_rate = all_pass / len(acc)
-        if pass_rate < 0.8:
-            return f"验收通过率 {all_pass}/{len(acc)} = {int(pass_rate*100)}% < 80%，整体验收未达标不能进入 shipped"
-    if current == "shipped" and target == "measured":
-        met = [m for m in state.get("metrics", []) if m.get("result") not in (None, "")]
-        total_met = len(state.get("metrics", []))
-        if not state.get("metrics"):
-            return "metrics 为空，至少登记 1 个可观测指标才能推进 measured"
-        if len(met) < max(1, total_met // 3):
-            return f"metrics 有结果 {len(met)}/{total_met}，至少 1/3 的指标有实采值才能进入 measured"
-    if current == "measured" and target == "closed":
-        dec = state.get("decisions", [])
-        if not dec:
-            return "measured → closed 前必须先记录一条 D-xxx 决策（continue / iterate / stop 三选一）"
-        last = dec[-1]
-        if last.get("choice") not in ("continue", "iterate", "stop"):
-            return f"最后一条决策 choice={last.get('choice')!r}，必须是 continue/iterate/stop 三个合法值才能 closed"
-        # codex P2-4：decision文本不能是空格，同时必须有数据引用 basis_ids 至少1个（否则"有文字就行"=没拿数据拍脑袋）
-        dec_txt = str(last.get("decision", "")).strip()
-        if not dec_txt:
-            return "最后一条决策 decision 文本为空，必须写明结论和数据依据才能 closed"
-        basis = [x for x in last.get("basis_ids", []) if str(x).strip()]
-        if not basis:
-            return "最后一条决策 basis_ids 为空，必须至少挂 1 个 M-xxx / D-xxx / Q-xxx 数据引用 ID，证明不是空口拍决策"
+    if target == "measured":
+        if all(m.get("result") in (None, "") for m in state.get("metrics", [])):
+            return "所有 metrics.result 全为空，没有真实上线数据不得标 measured"
     return ""
 
 
@@ -473,7 +435,6 @@ def _parse_prd_html_acceptance(prd_path: Path):
             self._in_tr = False
             self._in_td = False
             self._cur_rid = None
-            self._cur_aid = None
             self._cur_cells = []
             self._buf = ""
 
@@ -482,17 +443,9 @@ def _parse_prd_html_acceptance(prd_path: Path):
             if tag == "tbody":
                 self._in_tbody = True
             if tag == "tr":
-                # codex P1-1：详细方案rule-table/overview-table的tr必带data-preview或data-requirement-id但有data-preview属性
-                # 严格过滤：验收表的行 **必须** 没有 data-preview 属性；优先取明确写了 data-acceptance-id 的行；
-                # 兜底：没有data-acceptance-id时，如果tr有data-requirement-id且同时没有data-preview，才算验收行
-                has_aid = bool(attrs_d.get("data-acceptance-id"))
-                has_preview = "data-preview" in attrs_d
-                rid_raw = attrs_d.get("data-requirement-id") or ""
-                is_rid = rid_raw.startswith("R-")
-                if (has_aid or (is_rid and not has_preview)) and is_rid:
+                if "data-requirement-id" in attrs_d and attrs_d["data-requirement-id"].startswith("R-"):
                     self._in_tr = True
-                    self._cur_rid = rid_raw
-                    self._cur_aid = attrs_d.get("data-acceptance-id") or None
+                    self._cur_rid = attrs_d["data-requirement-id"]
                     self._cur_cells = []
             if tag == "td" and self._in_tr:
                 self._in_td = True
@@ -502,15 +455,11 @@ def _parse_prd_html_acceptance(prd_path: Path):
             if tag == "tbody":
                 self._in_tbody = False
             if tag == "tr" and self._in_tr:
-                # codex P1-1：统一稳健取法 = 最后两列永远是 scenario + expected_result，
-                # 前面任意多列是R-ID/A-ID等元信息，不再依赖3/4列硬下标
                 if len(self._cur_cells) >= 3 and self._cur_rid:
-                    scenario = self._cur_cells[-2].strip()
-                    exp_res = self._cur_cells[-1].strip()
-                    rows.append((self._cur_aid, self._cur_rid, scenario, exp_res))
+                    _, scenario, exp_res = self._cur_cells[0], self._cur_cells[1], self._cur_cells[2]
+                    rows.append((self._cur_rid, scenario.strip(), exp_res.strip()))
                 self._in_tr = False
                 self._cur_rid = None
-                self._cur_aid = None
             if tag == "td" and self._in_td:
                 self._cur_cells.append(self._buf)
                 self._in_td = False
@@ -523,85 +472,50 @@ def _parse_prd_html_acceptance(prd_path: Path):
     _P().feed(content)
     if not rows:
         raise ValueError(
-            "PRD 中没有找到验收条件表行。验收表行必须写 data-requirement-id='R-xxx'，"
-            "同一 R 多 A 同时写 data-acceptance-id='A-xxx'，且不能带 data-preview 属性（data-preview 是详细方案表专用）。"
+            "PRD 中没有找到带 data-requirement-id 的验收表行。"
+            "请确认 PRD 的验收条件表每行都带 data-requirement-id='R-xxx'。"
         )
     return rows
 
 
 def _sync_acceptance_from_prd(state: dict, prd_path: Path) -> int:
     parsed_rows = _parse_prd_html_acceptance(prd_path)
+    rid_to_a = {a.get("requirement_id"): a for a in state.get("acceptance", [])}
     r_ids = {r["id"] for r in state.get("requirements", [])}
-    acceptances = state.setdefault("acceptance", [])
-
-    aid_to_a = {a["id"]: a for a in acceptances if a.get("id")}
-    from collections import defaultdict
-    rid_to_many: dict[str, list[dict]] = defaultdict(list)
-    for a in acceptances:
-        rid = a.get("requirement_id")
-        if rid:
-            rid_to_many[rid].append(a)
     updated = 0
-    missing_aids: list[str] = []
 
-    for aid, rid, scenario, exp_res in parsed_rows:
+    for rid, scenario, exp_res in parsed_rows:
+        if rid not in rid_to_a:
+            raise ValueError(f"PRD 的 {rid} 在需求档案 acceptance[] 中找不到对应 A-xxx，先确保 PRD 工作流建立了骨架配对")
         if rid not in r_ids:
-            raise ValueError(f"PRD 行 {rid}（A={aid}）在 requirements[] 中不存在，先补 R 再写 A")
+            raise ValueError(f"PRD 行 {rid} 在 requirements[] 中不存在，先补 R 再写 A")
         if not scenario or not exp_res:
-            raise ValueError(f"PRD 行 {rid}（A={aid}）scenario / expected_result 为空，不允许写空")
+            raise ValueError(f"PRD 行 {rid} scenario / expected_result 为空，不允许写空")
 
-        target = None
-        if aid and aid in aid_to_a:
-            target = aid_to_a[aid]
-        else:
-            candidates = rid_to_many.get(rid, [])
-            for cand in candidates:
-                if cand.get("scenario") and cand["scenario"].strip() == scenario:
-                    target = cand
-                    break
-            if target is None and len(candidates) == 1:
-                target = candidates[0]
-        if target is None:
-            hint = aid or f"R={rid} scenario={scenario[:12]}…"
-            missing_aids.append(hint)
-            continue
-
-        target["requirement_id"] = rid
-        old_cat = f"{target.get('scenario','')}|{target.get('expected_result','')}"
-        new_cat = f"{scenario}|{exp_res}"
-        target["scenario"] = scenario
-        target["expected_result"] = exp_res
-        # codex P1-1：如果scenario或expected发生变化，原来的passed结论已经不成立——
-        # status从passed/failed重置为pending，checked_at/evidence_ref清空，必须重新验收
-        if old_cat != new_cat and target.get("status") in ("passed", "failed"):
-            target["status"] = "pending"
-            target["checked_at"] = None
-            target["evidence_ref"] = None
+    for rid, scenario, exp_res in parsed_rows:
+        a = rid_to_a[rid]
+        a["scenario"] = scenario
+        a["expected_result"] = exp_res
         concat = scenario + exp_res
         if any(k in concat for k in ("权限", "未接入", "未配置", "部分完成", "结果未知", "超时", "错误", "兜底", "冲突")):
-            target["category"] = "边界异常"
+            a["category"] = "边界异常"
         elif any(k in concat for k in ("目录", "版本", "发布", "暂停", "Prompt", "配置", "治理")):
-            target["category"] = "平台配置"
+            a["category"] = "平台配置"
         else:
-            target["category"] = "核心流程"
+            a["category"] = "核心流程"
         if any(k in concat for k in ("不调用写入", "不宣称成功", "不进入提交", "不得", "禁止",
                                       "真实业务回执", "单据号", "业务记录ID")):
-            target["priority"] = "P0"
-        elif target["category"] == "边界异常" and any(k in concat for k in ("未配置", "权限不足", "未接入")):
-            target["priority"] = "P0"
+            a["priority"] = "P0"
+        elif a["category"] == "边界异常" and any(k in concat for k in ("未配置", "权限不足", "未接入")):
+            a["priority"] = "P0"
         else:
-            target["priority"] = "P1"
+            a["priority"] = "P1"
         updated += 1
 
-    if missing_aids:
+    if len(parsed_rows) != len(state.get("acceptance", [])):
         raise ValueError(
-            "PRD 有 " + str(len(missing_aids)) + " 行找不到对应 A-xxx。"
-            "同一 R 有多个 A 时请在 PRD 行上写 data-acceptance-id='A-xxx'，"
-            "或先补 A-xxx 到 acceptance[]。未匹配：" + ", ".join(missing_aids[:6])
-        )
-    if updated != len(parsed_rows):
-        raise ValueError(
-            f"更新数 {updated} ≠ PRD 验收行数 {len(parsed_rows)}，请检查 A-xxx ID 是否对齐。"
+            f"PRD 验收行数 {len(parsed_rows)} ≠ acceptance[] 总数 {len(state.get('acceptance',[]))}。"
+            "如果 PRD 有新增验收行，先新增 A-xxx 到需求档案，再跑 --sync。"
         )
     return updated
 

@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0", "requirement_id": "REQ-TEST-001", "title": "简单改版",
+  "stage": "defined", "created_at": "2026-09-28T00:00:00Z", "updated_at": "2026-09-28T00:00:00Z",
+  "sources": [{"id":"SRC-001","classification":"evidence","kind":"interview","source_ref":"真实访谈","collected_at":"2026-09-28","summary":"用户反馈登录按钮小"}],
+  "requirements": [{"id":"R-001","summary":"放大登录按钮","source_ids":["SRC-001"],"screen_ids":["#login"],"acceptance_ids":["A-001"],"metric_ids":["M-001"]}],
+  "metrics": [{"id":"M-001","name":"登录成功率","definition":"登录成功/总尝试次","baseline_plan":"从埋点平台近30天拿","baseline":0.94,"target":0.96,"window":"7d","source_ref":null,"result":null}],
+  "acceptance": [{"id":"A-001","requirement_id":"R-001","category":"核心流程","priority":"P1","scenario":"正常点击登录按钮","expected_result":"登录成功跳转首页","status":"pending","evidence_ref":null,"checked_at":null}],
+  "open_questions": [],
+  "artifacts": {"prd":"需求文档/simple-PRD.html","prototype":"原型/simple.html"},
+  "decisions": []
+}

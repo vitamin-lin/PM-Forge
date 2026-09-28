@@ -56,12 +56,18 @@ MAPPING = [
     ("workflows/edu-pm-demand.md",         ".agents/workflows/edu-pm-demand.md",         CUSTOM),
     ("workflows/edu-pm-acceptance.md",     ".agents/workflows/edu-pm-acceptance.md",     CUSTOM),
     ("workflows/edu-pm-data-analysis.md",  ".agents/workflows/edu-pm-data-analysis.md",  CUSTOM),
+    ("workflows/edu-pm-ai-ethics.md",      ".agents/workflows/edu-pm-ai-ethics.md",      CUSTOM),
     ("templates/prd-content.html",         "scripts/prd-content.html",                   CUSTOM),
     ("templates/pencil-draw-prompt.md",    "scripts/pencil-draw-prompt.md",              CUSTOM),
     # ── 只创建一次 ──
     ("templates/关键点.md",                 "关键点.md",                                   ONCE),
     ("config/mcp.json.example",            ".mcp.json.example",                          ONCE),
     ("config/pm-forge.json.example",        "pm-forge.json.example",                      ONCE),
+    ("templates/project-constitution.md.example", "PROJECT_CONSTITUTION.md",              ONCE),
+    ("templates/.pm-product-context/README.md",      ".pm-product-context/README.md",       ONCE),
+    ("templates/.pm-product-context/product.md",     ".pm-product-context/product.md",      ONCE),
+    ("templates/.pm-product-context/personas.md",    ".pm-product-context/personas.md",     ONCE),
+    ("templates/.pm-product-context/competitors.md", ".pm-product-context/competitors.md",  ONCE),
 ]
 
 # 参考资料是可选的：老版本仓库里没有 assets/references/，缺了不影响功能。
@@ -292,12 +298,148 @@ def _write_lines(path, entries):
     atomic_write(path, (body + "\n" if body else "") + "\n".join(added) + "\n")
 
 
+def release(args):
+    """发布模式：bump VERSION + 刷新 known_hashes + 源vs安装版一致性检查。
+
+    codex P1-3：任何写入前必须先跑致命检查（缺源文件 / 源≠安装版漂移），
+    任何一项失败 sys.exit(1)，**严禁** 改 VERSION / known_hashes。
+    """
+    skill_root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(skill_root / "assets" / "scripts"))
+    import pm_runtime  # noqa: E402
+
+    project = Path(args.project).resolve() if args.project else None
+    installed_root = project if project and (project / "scripts" / "pm_requirement.py").is_file() else None
+
+    entries = list(MAPPING)
+    for path in sorted((skill_root / "assets" / REFERENCE_DIR).glob("*")):
+        if path.is_file():
+            entries.append((f"{REFERENCE_DIR}/{path.name}", f"{REFERENCE_TARGET}/{path.name}", CUSTOM))
+    source_hashes: dict[str, str] = {}
+    missing_sources = []
+    for src_rel, _dst, _k in entries:
+        p = skill_root / "assets" / src_rel
+        if not p.is_file():
+            missing_sources.append(src_rel)
+            continue
+        source_hashes[src_rel] = digest(p)
+    known_path = Path(__file__).resolve().parent / "known_hashes.json"
+    known_old = load_known_hashes()
+
+    ver_path = skill_root / "assets" / "scripts" / "pm_runtime.py"
+    ver_old = pm_runtime.VERSION
+    parts = ver_old.split(".")
+    if len(parts) != 3 or not all(p.isdigit() for p in parts):
+        print(f"❌ VERSION 格式异常：{ver_old}，需要 X.Y.Z")
+        return 2
+    ver_new = f"{parts[0]}.{parts[1]}.{int(parts[2]) + 1}"
+
+    drift = []
+    if installed_root:
+        for src_rel, dst, _k in entries:
+            src_p = skill_root / "assets" / src_rel
+            inst_p = installed_root / dst
+            if not inst_p.is_file() or not src_p.is_file():
+                continue
+            if digest(inst_p) != digest(src_p):
+                drift.append((dst, "≠", src_rel))
+    skipped_install_check = not installed_root
+
+    header = f"== PM Workflow Release {'[DRY-RUN]' if args.dry_run else ''} =="
+    print(header)
+    print(f"  当前版本：{ver_old} → {ver_new}")
+    print(f"  源文件数量：{len(source_hashes)}，缺源文件：{len(missing_sources)}")
+    if missing_sources:
+        for m in missing_sources:
+            print("     缺源：", m)
+
+    fatal = False
+    if missing_sources:
+        fatal = True
+        print(f"  ❌ 发现 {len(missing_sources)} 个缺源文件，必须先补源再发布")
+    if skipped_install_check:
+        print(f"  ⚠️  未提供 --project 或该目录未安装，跳过源/安装一致性检查")
+    elif drift:
+        fatal = True
+        print(f"  ❌ 检测到 {len(drift)} 个文件「安装版 ≠ 源版」，先反向同步再发布：")
+        for dst, _, src in drift:
+            print(f"      - {dst}  ↔  {src}")
+    else:
+        print("  ✅ 源/安装一致性检查通过")
+
+    # codex P1-3：dry-run和真发布共用同一个致命检查
+    if fatal:
+        if args.dry_run:
+            print("\n  [DRY-RUN] 检查未通过，未写入")
+        else:
+            print("\n  ❌ 检查未通过，任何文件未修改；先修问题再 release")
+        return 1
+
+    if args.dry_run:
+        print("\n  [DRY-RUN] 检查全部通过；去掉 --dry-run 再真发布")
+        return 0
+
+    text = ver_path.read_text(encoding="utf-8")
+    if f'VERSION = "{ver_old}"' not in text:
+        print("❌ pm_runtime.py 中找不到 VERSION 行，拒绝写入")
+        return 3
+    text = text.replace(f'VERSION = "{ver_old}"', f'VERSION = "{ver_new}"', 1)
+    ver_path.write_text(text, encoding="utf-8")
+    print(f"  ✅ VERSION bumped: {ver_old} → {ver_new}")
+
+    merged = dict(known_old)
+    for rel, h in source_hashes.items():
+        arr = list(merged.get(rel, []))
+        if h not in arr:
+            arr.append(h)
+        merged[rel] = arr
+    with known_path.open("w", encoding="utf-8") as f:
+        json.dump(merged, f, ensure_ascii=False, indent=2, sort_keys=True)
+    print(f"  ✅ known_hashes.json 已刷新（共 {len(merged)} 个源文件）")
+
+    print(f"\n发布完成：PM Workflow {ver_new}。下一步：git commit + tag v{ver_new}")
+    return 0
+
+
 if __name__ == "__main__":
+    # codex P1-2：兼容旧入口调用方式——
+    #   旧格式：initialize.py --project <dir> [--quiet] [--no-launcher]  (不带 install 子命令)
+    #   新格式：initialize.py install --project <dir> ...
+    #   无参数：默认 install 当前目录
+    #
+    # 处理策略：如果第一个位置参数不是子命令名（install/release/-h/--help），
+    # 就把整个argv前插入"install"，当作install模式跑，保证老脚本/老README不炸
+    argv = sys.argv[1:]
+    if len(argv) == 0:
+        argv = ["install"]
+    else:
+        first = argv[0]
+        if first not in ("install", "release", "-h", "--help") and first.startswith("-") or \
+           first not in ("install", "release", "-h", "--help") and not first.startswith("-"):
+            if not any(a in ("install", "release") for a in argv):
+                argv = ["install"] + argv
+
     parser = argparse.ArgumentParser(description="把 PM Workflow 安装进项目目录")
-    parser.add_argument("--project", default=".", help="项目目录，默认当前目录")
-    parser.add_argument("--quiet", action="store_true")
+    # 顶层也暴露 install 的常用参数，便于旧命令 initialize.py --project . 也能正常解析
+    parser.add_argument("--project", default=".", help="项目目录，默认当前目录（install 模式生效）")
+    parser.add_argument("--quiet", action="store_true", help="安静模式（install 模式生效）")
     parser.add_argument("--no-launcher", action="store_true",
-                        help="不注册 macOS 按需启动器（那样点导出前需手动双击启动入口）")
-    args = parser.parse_args()
-    sys.exit(install(args.project, quiet=args.quiet,
-                     with_launcher=not args.no_launcher))
+                        help="install 模式：不注册 macOS 按需启动器（点导出前需手动双击启动入口）")
+    sub = parser.add_subparsers(dest="mode", help="运行模式：install（默认）/ release（发布新版本）")
+    install_p = sub.add_parser("install", help="默认模式：安装到项目")
+    install_p.add_argument("--project", default=".", help="项目目录，默认当前目录")
+    install_p.add_argument("--quiet", action="store_true")
+    install_p.add_argument("--no-launcher", action="store_true",
+                           help="不注册 macOS 按需启动器（点导出前需手动双击启动入口）")
+    release_p = sub.add_parser("release", help="发布模式：bump 版本号 + 刷新 known_hashes + 检查源/安装版一致性")
+    release_p.add_argument("--dry-run", action="store_true", help="只检查不写版本号和 known_hashes")
+    release_p.add_argument("--project", default=".", help="可选：提供已安装项目路径，用于和最新源做diff比对")
+    args = parser.parse_args(argv)
+
+    if args.mode in (None, "install"):
+        # 顶层参数 vs install子parser参数：以子parser写的优先，没写才用顶层
+        project = getattr(args, "project", ".") or "."
+        quiet = bool(getattr(args, "quiet", False))
+        with_launcher = not bool(getattr(args, "no_launcher", False))
+        sys.exit(install(project, quiet=quiet, with_launcher=with_launcher))
+    sys.exit(release(args))

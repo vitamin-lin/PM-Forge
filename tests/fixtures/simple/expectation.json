@@ -1,0 +1,5 @@
+{
+  "audit_expected_count": 0,
+  "audit_banned_contains": ["AIMETRIC-001", "AIETHIC-001", "REF-001", "BLOCK"],
+  "validate_prd_fail": false
+}

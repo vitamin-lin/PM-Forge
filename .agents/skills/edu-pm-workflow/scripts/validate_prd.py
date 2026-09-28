@@ -110,7 +110,6 @@ def validate_prd(content):
     root = Tree(content).root
     h2 = [n.text().strip() for n in root.find("h2")]
     errors = []
-    warnings = []
 
     # ---- 1. 核心章节与独立性 ----
     for name in CORE_SECTIONS:
@@ -339,7 +338,7 @@ def validate_prd(content):
         lowered = text.lower()
         return sum(1 for kw in AI_KEYWORDS if kw.lower() in lowered) >= 3
 
-    has_ai = _has_ai_intent(content)
+    has_ai = _has_ai_intent(html_text)
 
     if has_ai:
         ai_card_specs = [
@@ -380,7 +379,8 @@ def validate_prd(content):
         # 评测卡：黄金测试集表至少3个数据行（header不算）
         eval_card = card_refs.get("ai-eval-card")
         if eval_card is not None:
-            rows = eval_card.find("tr")
+            rows = [n for n in eval_card.find_all(lambda x: True) if isinstance(x, Node) and x.tag == "tr"]
+            # 去掉所有<tr>里只含<th>的（header不算）
             real = sum(1 for tr in rows if tr.find("td"))
             if real < 3:
                 errors.append(
@@ -388,31 +388,6 @@ def validate_prd(content):
                     "3条以下上线后没有评测基线，属于盲人开车。"
                 )
 
-    # §12 WARN-005：业务任务卡（codex P3-1）。R≥5条的大需求建议启用task-card，不阻塞仅提醒
-    overview_tbl = root.find("table", "overview-table")
-    req_count = 0
-    if overview_tbl:
-        for tbl in (overview_tbl if isinstance(overview_tbl, list) else [overview_tbl]):
-            for tr in tbl.find("tr"):
-                if tr.find("td"):
-                    req_count += 1
-    if req_count >= 5:
-        task_div = root.find("div", "task-card")
-        task_rows = 0
-        if task_div:
-            for tdiv in (task_div if isinstance(task_div, list) else [task_div]):
-                for tr in tdiv.find("tr"):
-                    if tr.find("td"):
-                        task_rows += 1
-        need = max(1, round(req_count * 0.5))
-        if task_rows < need:
-            warnings.append(
-                f"WARN-005：需求条目数 {req_count} ≥ 5，建议启用 task-card 业务任务卡，至少填 {need} 条。"
-                "缺任务卡易出现「功能写了但操作角色/触发条件/异常回退/成功凭证未闭环」。"
-            )
-
-    for w in warnings:
-        print("⚠️  " + w)
     if errors:
         raise ValueError("PRD 格式检查未通过：\n" + "\n".join(dict.fromkeys(errors)))
     return True

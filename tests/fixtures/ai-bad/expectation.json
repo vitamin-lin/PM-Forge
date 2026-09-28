@@ -1,0 +1,4 @@
+{
+  "validate_prd_contains": ["BLOCK-004"],
+  "audit_contains": ["AIMETRIC-001", "AIETHIC-001"]
+}

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0", "requirement_id": "REQ-OQ-001", "title": "有阻塞待确认",
+  "stage": "defined", "created_at": "2026-09-28T00:00:00Z", "updated_at": "2026-09-28T00:00:00Z",
+  "sources": [{"id":"SRC-001","classification":"evidence","kind":"e","source_ref":"-","collected_at":"2026-09-28","summary":"."}],
+  "requirements": [{"id":"R-001","summary":"做x","source_ids":["SRC-001"],"acceptance_ids":["A-001"],"metric_ids":[]}],
+  "metrics": [{"id":"M-001","name":"x","definition":"x","baseline_plan":"x","baseline":null,"target":null,"window":null,"source_ref":null,"result":null}],
+  "acceptance": [{"id":"A-001","requirement_id":"R-001","scenario":"x","expected_result":"y","status":"pending","evidence_ref":null,"checked_at":null}],
+  "open_questions": [
+    {"id":"Q-001","question":"小问题（非阻塞）","status":"open","owner":"A","tags":[],"created_at":"2026-09-28T00:00:00Z"},
+    {"id":"Q-002","question":"个人信息出境合规没拍板","status":"open","owner":"法务","tags":["BLOCKING"],"labels":[],"created_at":"2026-09-28T00:00:00Z"}
+  ],
+  "artifacts": {"prd":"x-PRD.html","prototype":"x.html"},
+  "decisions": []
+}
