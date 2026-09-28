@@ -36,6 +36,7 @@ from urllib.parse import quote, unquote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pm_bootstrap import launch_engine  # noqa: E402
+from pm_requirement import artifact_root  # noqa: E402
 from pm_runtime import (VERSION, atomic_write, cors_response_origin, ensure_config,  # noqa: E402
                         origin_allowed, probe_health, reroll_ports, valid_token)
 
@@ -88,12 +89,20 @@ async def _open_browser_engine(playwright):
 
 
 def _all_html_under(subdir_name):
-    """收集项目内某类产物的所有 HTML：新嵌套 [需求名]/<subdir>/*.html + 旧扁平 <subdir>/*.html。"""
+    """收集默认目录及配置的 artifact_root 下某类产物的 HTML。"""
     found = {}
-    for pattern in (f"*/{subdir_name}/*.html", f"{subdir_name}/*.html"):
-        for path in PROJECT_DIR.glob(pattern):
-            if path.is_file():
-                found[path.resolve()] = path
+    roots = [PROJECT_DIR]
+    try:
+        configured = artifact_root(PROJECT_DIR)
+        if configured != PROJECT_DIR:
+            roots.append(configured)
+    except (OSError, ValueError, json.JSONDecodeError):
+        pass  # 配置有误时保留旧目录发现能力；建档时会报告明确错误。
+    for root in roots:
+        for pattern in (f"*/{subdir_name}/*.html", f"{subdir_name}/*.html"):
+            for path in root.glob(pattern):
+                if path.is_file():
+                    found[path.resolve()] = path
     return sorted(found.values(), key=lambda p: p.as_posix())
 
 

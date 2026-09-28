@@ -47,6 +47,7 @@ MAPPING = [
     ("scripts/pm_launchagent.py",          "scripts/pm_launchagent.py",          RUNTIME),
     ("scripts/prototype-export-client.js", "scripts/prototype-export-client.js", RUNTIME),
     ("scripts/validate_prd.py",            "scripts/validate_prd.py",            RUNTIME),
+    ("scripts/pm_requirement.py",           "scripts/pm_requirement.py",           RUNTIME),
     ("scripts/install_launcher.sh",        "scripts/install_launcher.sh",        RUNTIME),
     ("scripts/启动原型导出服务.command",     "启动原型导出服务.command",             RUNTIME),
     ("scripts/启动原型导出服务.bat",         "启动原型导出服务.bat",                 RUNTIME),
@@ -60,6 +61,7 @@ MAPPING = [
     # ── 只创建一次 ──
     ("templates/关键点.md",                 "关键点.md",                                   ONCE),
     ("config/mcp.json.example",            ".mcp.json.example",                          ONCE),
+    ("config/pm-forge.json.example",        "pm-forge.json.example",                      ONCE),
 ]
 
 # 参考资料是可选的：老版本仓库里没有 assets/references/，缺了不影响功能。

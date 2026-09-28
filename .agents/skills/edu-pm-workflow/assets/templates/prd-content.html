@@ -12,6 +12,7 @@
 <h2>📋 项目信息</h2>
 <table class="meta-table"><tbody>
 <tr><td>项目名称</td><td>[需求名称]</td></tr>
+<tr><td>需求ID</td><td>[REQ-YYYYMMDD-XXXXXXXX]</td></tr>
 <tr><td>版本号</td><td>[版本]</td></tr>
 <tr><td>文档负责人</td><td>[负责人]</td></tr>
 <tr><td>需求状态</td><td>[当前状态]</td></tr>
@@ -38,7 +39,7 @@
 <colgroup><col><col><col><col><col></colgroup>
 <thead><tr><th>用户结果</th><th>衡量指标</th><th>统计口径</th><th>预期方向</th><th>目标值</th></tr></thead>
 <tbody>
-<tr><td>[用户获得的结果]</td><td>[指标名]</td><td>[分子/分母或观察方式]</td><td>↑</td><td>待基线确认</td></tr>
+<tr data-metric-id="[M-001]"><td>[用户获得的结果]</td><td>[指标名]</td><td>[分子/分母或观察方式]</td><td>↑</td><td>待基线确认</td></tr>
 </tbody></table>
 
 <!-- ===== 以下章节按需裁剪，省略后编号连续重排 ===== -->
@@ -74,7 +75,7 @@
 <colgroup><col class="c-mod"><col class="c-fn"><col class="c-proto"><col></colgroup>
 <thead><tr><th>一级模块</th><th>二级功能</th><th>原型</th><th>描述</th></tr></thead><tbody>
 <!-- 一行 = 一个界面或一个状态变体；每个 <tr> 都要带 data-preview 指向 CATALOG 里的页 -->
-<tr data-preview="[page-id]">
+<tr data-requirement-id="[R-001]" data-preview="[page-id]">
   <td class="mod" rowspan="1">1<br>[模块名称]</td>
   <td class="fn">1.1 [功能名称]</td>
   <td class="proto">

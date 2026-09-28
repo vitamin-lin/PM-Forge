@@ -17,6 +17,7 @@ import sys
 import re
 from pathlib import Path
 from html.parser import HTMLParser
+from pm_requirement import artifact_root
 
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input",
         "link", "meta", "param", "source", "track", "wbr"}
@@ -238,7 +239,16 @@ def main(argv):
     else:
         # 默认只扫 `[需求名]/需求文档/*-PRD.html`——项目里的历史 PRD / 分享源文件 /
         # 需求挖掘目录下的旧稿不按本规范撰写，扫进来只会制造噪音。
-        files = sorted(Path.cwd().glob("*/需求文档/*-PRD.html"))
+        project = Path.cwd().resolve()
+        roots = [project]
+        try:
+            configured = artifact_root(project)
+            if configured != project:
+                roots.append(configured)
+        except (OSError, ValueError):
+            pass  # 仍可显式传入 PRD 路径；这里仅负责默认发现。
+        files = sorted({path for root in roots
+                        for path in root.glob("*/需求文档/*-PRD.html")})
         if not files:
             files = sorted(Path.cwd().glob("*-PRD.html"))
     if not files:

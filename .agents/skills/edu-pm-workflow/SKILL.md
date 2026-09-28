@@ -1,7 +1,6 @@
 ---
 name: edu-pm-workflow
 description: "Product management workflow for producing PRDs, interactive HTML prototypes, flowcharts, acceptance checklists, demand analysis, and data reports. Use when the user describes a product requirement, asks for PRD/prototype/flowchart/checklist/data-analysis output, or wants to continue this PM workflow."
-user-invocable: true
 ---
 
 # PM Workflow Skill
@@ -10,9 +9,10 @@ This skill turns product requirements into working artifacts: PRD HTML, interact
 
 ## First Decision
 
-1. If `.agents/workflows/` exists, do not re-initialize. Read the relevant workflow file and continue from the current project state.
-2. If `.agents/workflows/` or required scripts are missing, install this skill into the project once (command below).
-3. If the user explicitly asks to reinstall or update the workflow, run the same command. Runtime scripts are always refreshed; files the user has edited are kept and the new version is written to `.pm-workflow/updates/` for comparison. Replaced copies are backed up under `.handoff/skill-backups/`.
+1. Identify the **product project** before writing artifacts. The directory containing this Git-tracked skill may only be its source repository; when the user is working on another product, use that product's project root. If the destination is ambiguous, resolve it before creating a requirement folder.
+2. If `.agents/workflows/` and required scripts, including `scripts/pm_requirement.py`, already exist in the product project, read the relevant workflow and continue from its current state.
+3. If the workflows or required scripts are missing, install/update this skill in the product project (command below). Preserve locally customized workflow files; the installer puts proposed updates in `.pm-workflow/updates/` for comparison.
+4. If the user explicitly asks to reinstall or update the workflow, run the same command. Runtime scripts are refreshed; files the user has edited are kept and the new version is written to `.pm-workflow/updates/` for comparison. Replaced copies are backed up under `.handoff/skill-backups/`.
 
 Install / update — run `scripts/initialize.py` with the platform's Python. It is the single cross-platform installer; `scripts/init.sh` and `scripts/init.bat` are only thin wrappers around it for users who prefer a double-click.
 
@@ -32,9 +32,11 @@ Locating `<skill-dir>`: use your file-search tool (Glob/Grep) for `**/edu-pm-wor
 
 Load only the workflow needed for the user's current request:
 
-Artifacts are organized **per requirement**: each requirement gets ONE top-level folder named after it (`[需求名]/`), holding up to seven artifact subfolders — `需求文档/ 原型/ 流程图/ 原型截图/ 需求挖掘/ 验收清单/ 数据分析/` plus `沟通记录.md`. `scripts/`, the two start-service entries (`启动原型导出服务.command` on macOS, `启动原型导出服务.bat` on Windows), `.handoff/`, `关键点.md`, `.agents/` stay at the project root and are shared across requirements.
+Artifacts are organized **per requirement** inside the selected product project. Read `.agents/references/requirement-record.md` (or this skill's `assets/references/requirement-record.md` before installation) for the shared record, evidence rules and directory resolution. Each requirement has one `需求档案.json` with a stable ID; its folder lives under the project's optional `pm-forge.json` → `artifact_root` (default `.` for compatibility). It holds the used artifact subfolders and `沟通记录.md`. Shared scripts, start-service entries, `.handoff/` and `.agents/` stay at the product project root.
 
-**Folder ownership (applies to ALL four workflows):** Whichever workflow runs first creates `[需求名]/`. Before writing, every workflow first checks whether `[需求名]/` already exists — if so it reuses that folder and drops its output into the matching subfolder; if not it creates `[需求名]/`. PRD is **not** assumed to come first: a requirement may begin with demand discovery or data analysis, and all later steps reuse the same `[需求名]/`. Only create the subfolders actually used — never pre-create empty ones. Use an identical `[需求名]` across every workflow so all outputs land in one folder.
+**Folder ownership (applies to ALL four workflows):** Before writing, locate the existing record by `requirement_id` or create/reuse one with `python3 scripts/pm_requirement.py --project <product-project> --name <需求名>` (Windows: `py -3`). Call its parent `REQ_DIR`. All four workflows reuse `REQ_DIR` and update its record; PRD need not come first. Legacy `[需求名]/` paths in the table below refer to `REQ_DIR`, not necessarily a folder directly under the current working directory. Only create subfolders actually used.
+
+If a project has locally customized workflow files from an earlier version, keep those edits; apply the shared record and evidence rules in `requirement-record.md` when older path examples or simulated-data instructions disagree. Review `.pm-workflow/updates/` before merging later workflow changes.
 
 | User intent | Read this file first | Primary output |
 |---|---|---|
@@ -59,9 +61,10 @@ For PRD work, treat `.agents/workflows/edu-pm-prd.md` as the authoritative proje
 - **One row = one screen or one state variant** (§2.2 ⑦). A 二级功能 spanning three screens becomes three rows, each with its own prototype asset; a screen's multiple states stay in one row and are enumerated in 【页面元素】. If you cannot name the single image the 原型 cell shows, the granularity is wrong.
 - **需求概述 is more than a feature list** (§2.2 ⑤): it carries a **范围块** (本期范围 / 本期不做什么·暂不展开) plus the feature-list table plus, when needed, the cross-page rule tables (`h3` + small table). If the whole chapter is dropped for a small requirement, the 范围块 and rule tables must relocate — 功能清单 may go, but "what we are NOT doing" and the shared rules may not.
 - **需求背景 is three parts** (§2.2 ⑥): who hits what problem in what scenario → what impact it has → what evidence supports it (state plainly when there is none; never invent). **需求目标** closes with a 「待后续确认的产品口径」 list collecting every 待确认 in the document, each with owner and impact.
+- **Keep the requirement record synchronized.** Link each real source, requirement item, screen, acceptance item and goal metric by stable IDs as described in `requirement-record.md`. `demo` or unsupported claims are not evidence. Put `requirement_id` in 项目信息, `data-requirement-id` on detailed-solution rows, and `data-metric-id` on goal rows when those rows exist; preserve the readable HTML output.
 - **The edit module ships undo/redo** (§2.7 ⑤): ⌘Z / Ctrl+Z undo, ⌘⇧Z / Ctrl+Y (also Ctrl+⇧Z) redo, covering text edits, row add/delete, table delete and column/row resize on one stack; a new edit clears the redo branch. Deleted rows/tables are kept alive as **DOM nodes** in the stack (not HTML strings) so restored controls still work, and the native contenteditable undo must be `preventDefault`ed in the capture phase or both stacks fire at once. History is memory-only — never promise it survives a refresh.
 - **时序图 (sequence diagram)** is an optional dev/QA-facing PRD chapter placed AFTER 数据埋点 (the last body chapter): copyable **Mermaid source-code text blocks — never rendered images or iframes** (devs/QA reuse the text directly; a rendered picture was rejected). Contains an end-side orchestration `sequenceDiagram` (real participants, e.g. 用户/端/Cocos/服务端) plus a key-object `stateDiagram-v2`, each block with a "复制源码" button and 说明 bullets. Technical field/interface names ARE allowed in this chapter (the §2.3.1 ban only covers 详细方案 description cells). See edu-pm-prd.md §4.7.
-- **交互流程图 (screen flow)** is an optional PRD chapter placed before 详细方案: one whole image-style HTML canvas stitching all core screens (scaled live prototype iframes) with labeled **right-angle (Manhattan-routed) arrows** for navigation — never bezier curves or diagonal lines; same-side loop-back edges run on offset rails — plus an explicit state-machine legend. Produce per edu-pm-prd.md §4.6; export via the local screenshot service.
+- **交互流程图 (screen flow)** is an optional PRD chapter placed before 详细方案: use readable state-summary cards linked to the full prototype hash pages, with labeled **right-angle (Manhattan-routed) arrows** for navigation — never shrink whole prototype pages into tiny iframes or use bezier/diagonal connectors. Same-side loop-back edges run on offset rails; include a state-machine legend. Produce per edu-pm-prd.md §4.6; export via the local screenshot service.
 - Produce HTML artifacts, not Markdown artifacts, unless the user asks otherwise.
 - Keep PRD, prototype, and flowchart synchronized. When one changes, inspect the other two for necessary updates.
 - The HTML prototype is the primary interactive artifact. Pencil is optional visual enhancement only.
@@ -86,10 +89,11 @@ Offer Pencil enhancement only after the HTML prototype is usable, or when the us
 
 ## Output Structure
 
-Per-requirement folders at the project root; shared tooling stays at root.
+Per-requirement folders under the product project's configured `artifact_root` (`.` by default); shared tooling stays at the project root. The layout below shows the default.
 
 ```text
 [需求名]/                  one top-level folder per requirement
+  需求档案.json              stable ID, evidence, links, metrics and decisions
   需求文档/                  PRD HTML
   原型/                     interactive prototype HTML and optional .pen
   原型截图/                  exported PNG screenshots (this requirement)
@@ -105,9 +109,12 @@ scripts/                  [shared] prototype export service
 启动原型导出服务.bat         [shared] Windows — double-click and keep the window open
 .handoff/                 [shared] cross-session handoff files
 .agents/workflows/        [shared] editable workflow definitions
+.agents/references/requirement-record.md  [shared] record contract
+pm-forge.json              [optional] artifact_root inside this product project
 .agents/skills/edu-pm-workflow/assets/
   templates/prd-content.html   PRD body skeleton — copy and fill, do not hand-write
   scripts/validate_prd.py      mechanical PRD validation — must pass before delivery
+  scripts/pm_requirement.py    create/reuse the requirement record
 ```
 
 ## Customization
