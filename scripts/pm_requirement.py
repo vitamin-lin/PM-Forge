@@ -9,6 +9,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 
 CONFIG_NAME = "pm-forge.json"
@@ -46,15 +47,23 @@ def requirement_name(value: str) -> str:
     return name
 
 
-def initialize(project: Path, name: str) -> Path:
+def initialize(project: Path, name: str, requirement_dir: Optional[str] = None) -> Path:
     project = project.resolve()
     if not project.is_dir():
         raise ValueError(f"项目目录不存在：{project}")
     name = requirement_name(name)
-    root = artifact_root(project)
-    target = (root / name).resolve()
-    if not target.is_relative_to(root):
-        raise ValueError("需求目录超出产物目录")
+    if requirement_dir is None:
+        root = artifact_root(project)
+        target = (root / name).resolve()
+        if not target.is_relative_to(root):
+            raise ValueError("需求目录超出产物目录")
+    else:
+        relative = Path(requirement_dir)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("requirement-dir 必须是项目内已有目录的相对路径")
+        target = (project / relative).resolve()
+        if not target.is_relative_to(project) or not target.is_dir():
+            raise ValueError("requirement-dir 必须指向项目内已有的需求目录")
     record = target / RECORD_NAME
     if record.is_file():
         existing = json.loads(record.read_text(encoding="utf-8"))
@@ -89,9 +98,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", default=".", help="已安装 PM Forge 的项目目录")
     parser.add_argument("--name", required=True, help="需求名称；同一需求重复调用会返回已有档案")
+    parser.add_argument("--requirement-dir", help="已有需求目录相对项目的位置；独立单需求项目可用 .")
     args = parser.parse_args()
     try:
-        record = initialize(Path(args.project), args.name)
+        record = initialize(Path(args.project), args.name, args.requirement_dir)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         parser.exit(1, f"无法创建需求档案：{error}\n")
     print(record)
