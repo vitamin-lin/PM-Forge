@@ -1,0 +1,33 @@
+<!doctype html><html><body><div id="prdContent">
+<h2>一、项目信息</h2><table class="meta-table"><tbody>
+<tr><th>项目名称</th><td>混合PRD</td></tr><tr><th>需求ID</th><td>REQ-MIX-001</td></tr>
+<tr><th>版本</th><td>0.1</td></tr><tr><th>需求负责人</th><td>产品</td></tr><tr><th>版本/状态</th><td>v0.1 draft</td></tr>
+</tbody></table>
+<style></style>
+<h2>二、版本记录</h2><table class="meta-table"><thead><tr><th>版本</th><th>日期</th><th>修改人</th><th>修改说明</th></tr></thead>
+<tbody><tr><td>0.1</td><td>2026-09-28</td><td>产品</td><td>draft</td></tr></tbody></table>
+<h2>三、需求背景</h2><p>背景随便写。</p>
+<h2>四、需求目标</h2><p>目标。</p>
+<h2>五、需求概述</h2>
+<div class="scope-card"><b>范围</b><ul><li>x</li></ul></div>
+<div class="out-of-scope-card"><b>不做</b><ul><li>y</li></ul></div>
+<div class="risk-card required-block"><b>风险</b><ul><li>a</li><li>b</li><li>c</li></ul></div>
+
+<!-- 关键污染源：overview-table 带 data-requirement-id 但**没有** data-preview！！！（codex P1-1实锤） -->
+<table class="overview-table"><thead><tr><th>功能ID</th><th>二级功能</th><th>说明</th></tr></thead>
+<tbody>
+<tr data-requirement-id="R-001"><td>R-001</td><td>提交报销</td><td>点击提交成功跳转草稿预览</td></tr>
+<tr data-requirement-id="R-002"><td>R-002</td><td>编辑报销</td><td>点击编辑弹出修改表单</td></tr>
+</tbody>
+</table>
+
+<h2>八、验收条件表</h2>
+<table class="acceptance-table"><thead><tr><th>ID</th><th>需求ID</th><th>场景</th><th>预期结果</th></tr></thead>
+<tbody>
+<tr data-requirement-id="R-001" data-acceptance-id="A-001"><td>A-001</td><td>R-001</td><td>正常提交报销单，单据字段都有</td><td>提交成功，返回业务单据号 BX-*，跳详情页</td></tr>
+<tr data-requirement-id="R-002" data-acceptance-id="A-999"><td>A-999</td><td>R-002</td><td>用户无权限时点提交</td><td>阻止提交，弹权限不足提示，单据保持草稿（codex P1-2写错ID）</td></tr>
+</tbody>
+</table>
+
+<h2>十、上线计划</h2><p>灰度→全量。</p>
+</div></body></html>

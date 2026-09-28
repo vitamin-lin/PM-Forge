@@ -1,0 +1,10 @@
+{
+  "schema_version":"1.0","requirement_id":"REQ-X","title":"x","stage":"defined","created_at":"","updated_at":"",
+  "sources":[],"requirements":[{"id":"R-001","summary":"x"}],
+  "metrics":[],"open_questions":[],"artifacts":{},"decisions":[],
+  "acceptance":[
+    {"id":"A-001","requirement_id":"R-001","category":"核心流程","priority":"P0",
+     "scenario":"原始正确场景：正常点击","expected_result":"原始正确预期：跳转首页",
+     "status":"passed","checked_at":"2026-09-27T00:00:00Z","evidence_ref":"log://123"}
+  ]
+}

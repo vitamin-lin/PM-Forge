@@ -1,0 +1,8 @@
+{
+  "parse_acceptance": {
+    "prd_file": "PRD.html",
+    "expected_count": 2,
+    "only_aids": ["A-001", "A-999"],
+    "validate_table_contract": true
+  }
+}

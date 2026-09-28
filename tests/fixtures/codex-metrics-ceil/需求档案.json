@@ -1,0 +1,12 @@
+{
+  "schema_version":"1.0","requirement_id":"REQ-Z","title":"z","stage":"shipped","created_at":"","updated_at":"",
+  "sources":[],"requirements":[],"artifacts":{},
+  "metrics":[
+    {"id":"M-001","name":"登录成功率","result":"0.95"},
+    {"id":"M-002","name":"注册成功率","result":null},
+    {"id":"M-003","name":"客诉率","result":null},
+    {"id":"M-004","name":"DAU","result":null},
+    {"id":"M-005","name":"留存30d","result":null}
+  ],
+  "acceptance":[],"open_questions":[],"decisions":[]
+}

@@ -1,0 +1,8 @@
+{
+  "sync_acceptance_from_prd": {
+    "prd_file": "PRD.html",
+    "expect_error": true,
+    "expected_error_contains": ["A-999", "需求档案 acceptance[] 中找不到 ID"],
+    "expect_no_touch": true
+  }
+}

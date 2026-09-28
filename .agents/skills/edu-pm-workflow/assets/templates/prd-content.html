@@ -303,6 +303,27 @@
   </tbody>
 </table>
 
+<!-- 验收数据表：同步脚本只读取 acceptance-table；最后两列固定为验收场景、可观察的预期结果。
+     每个数据行都带所属 R；同一 R 对应多个 A 时，每行必须补 data-acceptance-id。 -->
+<h3>验收条件（同步需求档案 acceptance[]）</h3>
+<table class="acceptance-table">
+  <thead>
+    <tr>
+      <th>验收ID</th>
+      <th>验收场景</th>
+      <th>可观察的预期结果</th>
+    </tr>
+  </thead>
+  <tbody>
+    <!-- 一行对应一条已有 A-xxx；R-ID、A-ID 必须与需求档案一致。 -->
+    <tr data-requirement-id="R-001" data-acceptance-id="A-001">
+      <td>A-001</td>
+      <td>[用户、前置条件与操作场景]</td>
+      <td>[系统可观察结果，包含状态/提示/业务记录或凭证]</td>
+    </tr>
+  </tbody>
+</table>
+
 <!-- AI产品专属：以下4块属于AI产品的「强制必填骨架」，AI产品PRD必须启用，BLOCK-004会阻塞。普通SaaS产品可以整块删除（记得调整h2编号连续） -->
 <div class="ai-boundary-card">
   <h3>AI-1 · 模型选型与版本化（必填，AI类产品）</h3>

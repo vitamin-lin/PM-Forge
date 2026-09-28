@@ -9,7 +9,7 @@
 退出码 0 = 全部通过；1 = 有文件未通过；2 = 没找到文件。
 
 校验的是「机械可判定」的部分：章节独立性、固定表头与列数、
-埋点命名、描述列分块与逐条换行、data-preview 覆盖、
+埋点命名、验收表ID与列、描述列分块与逐条换行、data-preview 覆盖、
 文档级 style 位置、章节编号连续性。
 视觉类检查（遮挡、字号、配色统一）仍需人工按 §4.3 / §4.6 核对。
 """
@@ -106,11 +106,52 @@ def _section_of(root):
     return lookup
 
 
+def _acceptance_table_errors(root):
+    """Validate the one explicit table consumed by pm_requirement.py sync."""
+    errors = []
+    tables = root.find("table", "acceptance-table")
+    if not tables:
+        return [
+            "缺少验收条件表：必须使用 <table class=\"acceptance-table\">，"
+            "供需求档案 acceptance[] 同步。"
+        ]
+    if len(tables) > 1:
+        errors.append("验收条件表只能有一张 acceptance-table，避免同步重复或歧义")
+
+    valid_rows = 0
+    for table in tables:
+        for row in table.find("tr"):
+            cells = [c for c in row.children if isinstance(c, Node) and c.tag == "td"]
+            if not cells:
+                continue  # 表头
+            rid = row.attrs.get("data-requirement-id", "").strip()
+            aid = row.attrs.get("data-acceptance-id", "").strip()
+            if not rid.startswith("R-"):
+                errors.append("验收条件表每个数据行都必须带 data-requirement-id=\"R-xxx\"")
+            else:
+                valid_rows += 1
+            if aid and not aid.startswith("A-"):
+                errors.append("验收条件表的 data-acceptance-id 必须是 A-xxx")
+            if len(cells) < 3:
+                errors.append("验收条件表每行至少三列：验收ID、验收场景、可观察的预期结果")
+                continue
+            if not cells[-2].text().strip():
+                errors.append(f"验收条件表 {rid or '未知R'} 的验收场景为空")
+            if not cells[-1].text().strip():
+                errors.append(f"验收条件表 {rid or '未知R'} 的预期结果为空")
+    if valid_rows == 0:
+        errors.append("验收条件表至少需要一条带有效 R-ID 的数据行")
+    return errors
+
+
 def validate_prd(content):
     root = Tree(content).root
     h2 = [n.text().strip() for n in root.find("h2")]
     errors = []
     warnings = []
+
+    # ---- 验收条件表：与 acceptance[] 同步共用同一结构契约 ----
+    errors.extend(_acceptance_table_errors(root))
 
     # ---- 1. 核心章节与独立性 ----
     for name in CORE_SECTIONS:

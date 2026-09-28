@@ -74,7 +74,7 @@ For PRD work, treat `.agents/workflows/edu-pm-prd.md` as the authoritative proje
 - **Carry the confirmation into the document.** §1.4 maps each confirmed item to its PRD location: 核心改动 → 功能清单+详细方案; 成功指标 → 需求目标表; **不做 / 范围外 → 需求概述的「范围块」**; 背景证据 → 需求背景三段式; 跨页规则 → 需求概述规则表. A "不做" that was agreed verbally but never written into the PRD does not count as confirmed.
 - **单向真相源：沟通记录不负责存结构化待确认。** 结构化待确认项 **唯一** 写入 `REQ_DIR/需求档案.json` → `open_questions[]`，按 `requirement-record.md` 的 `Q-xxx` 编号维护，有 owner/status/created_at。PRD 正文末尾的「待后续确认的产品口径」清单，**只允许引用 open_questions 的 Q-ID 一句话摘要**（例如 `Q-003 · 埋点字典缺 | Owner=数据团队 | 影响=§七数据埋点参数名`），不允许在沟通记录里再写一份「1. xxx 待确认」编号清单。沟通记录只记录：过程叙述、用户原话、决策结论、以及引用 `D-xxx / Q-xxx / R-xxx / A-xxx / M-xxx` 的 ID。违反会被 `pm_requirement.py --audit` 的 TRUTH-001 报 WARN。
 - **统一用 `assets/templates/prd-content.html` 填内容，不要手写 HTML 骨架。**（纯视觉+骨架，详见 Visual-Reference.md V-SKEL-001）
-- **交付前跑 `assets/scripts/validate_prd.py` 如实汇报结果。** 机械检查范围：核心章节/两张表不合并/边界不独立章/章节连续/6个表头列数/元信息两列/每行都有`data-preview`和原型/`.desc-block`结构/埋点snake_case/`#prdContent`自有style。**通过 ≠ PRD好，但FAIL=一定没做完。**（纯机械校验，详见Visual-Reference.md V-OUT-004）
+- **交付前跑 `assets/scripts/validate_prd.py` 如实汇报结果。** 机械检查范围包括核心章节、验收表 class/ID/场景与结果列、表头和章节顺序、详细方案原型与描述结构、埋点命名、正文样式位置。**通过 ≠ PRD好，但FAIL=一定没做完。**（纯机械校验，详见Visual-Reference.md V-OUT-004）
 - **章节顺序固定，但可按需求规模裁剪（不能静默裁剪，确认时明确哪些留/删）。** 顺序：项目信息→版本记录→需求背景→需求目标→需求概述→业务流程图→交互流程图→详细方案→数据埋点→时序图→上线计划→附录。核心骨架必留：项目信息、版本记录（两张表独立永不合并）、需求背景、需求目标、详细方案。其他7个小需求可删除但必须告知。如果业务流程/交互流程裁剪则不产出对应流程图文件（edu-pm-prd.md §1.3.1）。
 - **不设独立的「异常/边界」大章**，边界条件写在所属功能行的【边界说明】块内（详细方案 §2.3.1）。详见 Visual-Reference.md V-SKEL-003。
 - **需求目标必须写「用户结果+怎么测」不是实现动作。** 可量化目标进：用户结果/衡量指标/统计口径/预期方向/目标值 5列固定表头表；没有真实基线→写「待基线确认」不编百分比；不可量化也必须可观察可验证；需求背景引用的数据必须给源头或标未确认（§2.2④）。
@@ -83,7 +83,7 @@ For PRD work, treat `.agents/workflows/edu-pm-prd.md` as the authoritative proje
 - **每行=一屏或一个状态变体**（§2.2⑦）。跨三屏二级功能拆3行每行独立原型；一屏多状态单行写【页面元素】；说不清原型这张图片具体是什么→粒度过细回滚。详见 Visual-Reference.md V-SKEL-002。
 - **需求概述≠功能清单表**（§2.2⑤）。必须有：范围块（本期范围/本期不做什么·暂不展开）+ 功能清单表 + （必要时）跨页规则小表（`h3`+小表）。整章裁剪时必须只丢功能清单，范围块和公共规则不能丢。
 - **需求背景固定三段式**（§2.2⑥）：谁/什么场景/遇到什么问题→影响多大→证据是什么（没证据就说没，不编）。需求目标结尾有「待后续确认的产品口径」清单，汇总全文所有待确认项+Owner+影响。
-- **档案关联必须同步**（requirement-record.md 跨阶段追溯）：真实来源/需求/屏/验收/目标用稳定ID连；demo和无证据陈述不算证据；项目信息放`requirement_id`；详细方案行`data-requirement-id`；目标行`data-metric-id`（同一R多A时，验收行加`data-acceptance-id`），见Visual-Reference.md V-SKEL-004。
+- **档案关联必须同步**（requirement-record.md 跨阶段追溯）：真实来源/需求/屏/验收/目标用稳定ID连；demo和无证据陈述不算证据；项目信息放`requirement_id`；详细方案行`data-requirement-id`；目标行`data-metric-id`；验收条件表必须用`<table class="acceptance-table">`，每行有`data-requirement-id`，同一R多A时每行加`data-acceptance-id`。具体列契约与旧PRD迁移见 `edu-pm-prd.md` §7.1。
 - **编辑模块撤销/重做栈**（§2.7⑤）：⌘Z/Ctrl+Z撤销，⌘⇧Z/Ctrl+Y（或Ctrl+⇧Z）重做，覆盖：文本编辑、行增删、表删、列/行尺寸调整，全部共用一个栈；新编辑清 redo；删行/表以DOM节点（不是HTML字符串）存栈保证控件恢复；`contenteditable`原生撤销必须捕获阶段`preventDefault`，否则两个栈同时触发；纯内存，不承诺刷新后还在（这是展示层行为，保留在SKILL仅因为这是对用户交互的硬承诺，不是产品判断）。
 - **时序图放在数据埋点后，是研发/测试向可选章节。** 必须是可复制的Mermaid源码文本块（不是渲染图/iframe），研发测试直接用源码；源码分：端侧编排`sequenceDiagram` + 关键对象`stateDiagram-v2`，每个代码块配「复制源码」按钮+要点说明。这一章允许写技术接口/字段名（§2.3.1禁止技术措辞仅针对详细方案描述块），详见edu-pm-prd.md §4.7。
 - **交互流程图放在详细方案前可选章节**：状态摘要卡+原型哈希页链接，导航箭头必须直角/曼哈顿布线；自环边用偏移轨；必须有状态机图例；不允许把整屏原型缩小成小iframe、也不允许贝塞尔/对角箭头。导出服务走本地截图。详见 Visual-Reference.md V-PROTO-004。

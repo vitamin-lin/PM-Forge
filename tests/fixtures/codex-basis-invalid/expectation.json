@@ -1,0 +1,44 @@
+{
+  "push_stage": {
+    "from": "measured", "to": "closed",
+    "expected_error_contains": ["M-DOES-NOT-EXIST", "对应M类中不存在此ID"]
+  },
+  "cli_stage_updates": {
+    "cases": [
+      {
+        "name": "same-command-valid-decision",
+        "record_overrides": {
+          "decisions": [{"id":"D-001","choice":"continue","decision":"旧决策缺依据","basis_ids":[]}]
+        },
+        "args": ["--push-stage","closed","--add-decision","根据实采指标继续迭代","--choice","continue","--basis-ids","M-001"],
+        "expected_exit": 0,
+        "expected_stage": "closed",
+        "expected_latest_basis": ["M-001"]
+      },
+      {
+        "name": "same-command-invalid-decision",
+        "record_overrides": {
+          "decisions": [{"id":"D-001","choice":"continue","decision":"旧决策有依据","basis_ids":["M-001"]}]
+        },
+        "args": ["--push-stage","closed","--add-decision","根据不存在的数据停止","--choice","stop","--basis-ids","M-999"],
+        "expected_exit": 1,
+        "output_contains": ["M-999", "对应M类中不存在此ID"],
+        "expected_stage": "measured",
+        "expected_latest_basis": ["M-001"],
+        "expect_unchanged": true
+      },
+      {
+        "name": "closed-requires-explicit-decision",
+        "record_overrides": {
+          "decisions": [{"id":"D-001","choice":"continue","decision":"旧决策有依据","basis_ids":["M-001"]}]
+        },
+        "args": ["--push-stage","closed"],
+        "expected_exit": 1,
+        "output_contains": ["必须通过 --add-decision"],
+        "expected_stage": "measured",
+        "expected_latest_basis": ["M-001"],
+        "expect_unchanged": true
+      }
+    ]
+  }
+}

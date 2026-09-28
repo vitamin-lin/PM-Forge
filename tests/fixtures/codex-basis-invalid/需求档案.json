@@ -1,0 +1,6 @@
+{
+  "schema_version":"1.0","requirement_id":"REQ-Y","title":"y","stage":"measured","created_at":"","updated_at":"",
+  "sources":[],"requirements":[],"metrics":[{"id":"M-001","name":"登录成功率","baseline_plan":"从埋点平台获取","result":"0.95"}],
+  "acceptance":[],"open_questions":[],"artifacts":{},
+  "decisions":[{"id":"D-001","choice":"continue","decision":"继续下一期","basis_ids":["M-DOES-NOT-EXIST"]}]
+}

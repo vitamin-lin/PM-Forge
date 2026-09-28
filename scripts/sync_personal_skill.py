@@ -21,7 +21,7 @@ def inventory(root: Path) -> dict[str, str]:
     if not root.is_dir():
         return result
     for path in root.rglob("*"):
-        if path.is_file():
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc":
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             result[path.relative_to(root).as_posix()] = digest
     return result
@@ -80,7 +80,7 @@ def main() -> int:
     staging = DESTINATION.parent / f".{SKILL_NAME}.sync-staging"
     if staging.exists():
         shutil.rmtree(staging)
-    shutil.copytree(SOURCE, staging)
+    shutil.copytree(SOURCE, staging, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
 
     backup = None
     if DESTINATION.exists():

@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import uuid
@@ -425,8 +426,12 @@ def _check_stage_push(current: str, target: str, state: dict) -> str:
         total_met = len(state.get("metrics", []))
         if not state.get("metrics"):
             return "metrics 为空，至少登记 1 个可观测指标才能推进 measured"
-        if len(met) < max(1, total_met // 3):
-            return f"metrics 有结果 {len(met)}/{total_met}，至少 1/3 的指标有实采值才能进入 measured"
+        # codex P2-4：文档写 ceil(总数/3) 所以用 math.ceil，不能用 // 3(floor)
+        # 3指标→至少1；4指标→至少2；5指标→至少2（与原floor 5//3=1不同）
+        import math
+        need = max(1, math.ceil(total_met / 3))
+        if len(met) < need:
+            return f"metrics 有结果 {len(met)}/{total_met}，至少 ceil({total_met}/3)={need} 个指标有实采值才能进入 measured"
     if current == "measured" and target == "closed":
         dec = state.get("decisions", [])
         if not dec:
@@ -438,9 +443,35 @@ def _check_stage_push(current: str, target: str, state: dict) -> str:
         dec_txt = str(last.get("decision", "")).strip()
         if not dec_txt:
             return "最后一条决策 decision 文本为空，必须写明结论和数据依据才能 closed"
-        basis = [x for x in last.get("basis_ids", []) if str(x).strip()]
-        if not basis:
-            return "最后一条决策 basis_ids 为空，必须至少挂 1 个 M-xxx / D-xxx / Q-xxx 数据引用 ID，证明不是空口拍决策"
+        basis_raw = [x for x in last.get("basis_ids", []) if str(x).strip()]
+        if not basis_raw:
+            return "最后一条决策 basis_ids 为空，必须至少挂 1 个 M-xxx / D-xxx / Q-xxx / A-xxx / R-xxx / SRC-xxx 数据引用 ID，证明不是空口拍决策"
+        # codex P2-3：basis_ids 的真实性检查——前缀对得上的必须在对应表里存在，挂不存在的ID=蒙混过关
+        valid_sets: dict[str, set] = {
+            "M": {m.get("id") for m in state.get("metrics", []) if m.get("id")},
+            "D": {d.get("id") for d in state.get("decisions", []) if d.get("id")},
+            "Q": {q.get("id") for q in state.get("open_questions", []) if q.get("id")},
+            "SRC": {s.get("id") for s in state.get("sources", []) if s.get("id")},
+            "A": {a.get("id") for a in state.get("acceptance", []) if a.get("id")},
+            "R": {r.get("id") for r in state.get("requirements", []) if r.get("id")},
+        }
+        bad_ids: list[str] = []
+        for bid in basis_raw:
+            prefixes = ("SRC", "M", "D", "Q", "A", "R")
+            matched_prefix = next((p for p in prefixes if bid.upper().startswith(p + "-")), None)
+            if matched_prefix is None:
+                bad_ids.append(f"{bid}(不合法前缀，需SRC-/M-/D-/Q-/A-/R-之一)")
+                continue
+            # M类指标必须有result——拿空指标数据来证明决策纯属扯淡
+            if bid not in valid_sets.get(matched_prefix, set()):
+                bad_ids.append(f"{bid}(对应{matched_prefix}类中不存在此ID)")
+                continue
+            if matched_prefix == "M":
+                real_m = next((m for m in state["metrics"] if m.get("id") == bid), None)
+                if real_m and real_m.get("result") in (None, ""):
+                    bad_ids.append(f"{bid}(M类无result实采值，不能作为决策依据)")
+        if bad_ids:
+            return "最后一条决策 basis_ids 真实性未通过：" + "；".join(bad_ids) + "。引用的ID必须存在，M类还必须有实采结果。"
     return ""
 
 
@@ -469,7 +500,10 @@ def _parse_prd_html_acceptance(prd_path: Path):
     class _P(HTMLParser):
         def __init__(self):
             super().__init__()
-            self._in_tbody = False
+            # codex P1-1：用正向「进入了带acceptance-table class的table」作为严格判断
+            # 不能再用「没有data-preview」反向排除——overview/version-tracking表也可能无data-preview但有R-ID
+            self._accept_tbl_depth = 0
+            self._tbl_stack: list[set] = []  # 每层嵌套<table>的class集合
             self._in_tr = False
             self._in_td = False
             self._cur_rid = None
@@ -479,17 +513,16 @@ def _parse_prd_html_acceptance(prd_path: Path):
 
         def handle_starttag(self, tag, attrs):
             attrs_d = dict(attrs)
-            if tag == "tbody":
-                self._in_tbody = True
-            if tag == "tr":
-                # codex P1-1：详细方案rule-table/overview-table的tr必带data-preview或data-requirement-id但有data-preview属性
-                # 严格过滤：验收表的行 **必须** 没有 data-preview 属性；优先取明确写了 data-acceptance-id 的行；
-                # 兜底：没有data-acceptance-id时，如果tr有data-requirement-id且同时没有data-preview，才算验收行
-                has_aid = bool(attrs_d.get("data-acceptance-id"))
-                has_preview = "data-preview" in attrs_d
+            if tag == "table":
+                classes = set((attrs_d.get("class") or "").split())
+                self._tbl_stack.append(classes)
+                if "acceptance-table" in classes:
+                    self._accept_tbl_depth += 1
+            if tag == "tr" and self._accept_tbl_depth > 0:
+                # codex P1-1：必须在acceptance-table内，且必带R-ID；优先抓明确写了A-ID的行
                 rid_raw = attrs_d.get("data-requirement-id") or ""
                 is_rid = rid_raw.startswith("R-")
-                if (has_aid or (is_rid and not has_preview)) and is_rid:
+                if is_rid:
                     self._in_tr = True
                     self._cur_rid = rid_raw
                     self._cur_aid = attrs_d.get("data-acceptance-id") or None
@@ -499,12 +532,13 @@ def _parse_prd_html_acceptance(prd_path: Path):
                 self._buf = ""
 
         def handle_endtag(self, tag):
-            if tag == "tbody":
-                self._in_tbody = False
+            if tag == "table" and self._tbl_stack:
+                popped = self._tbl_stack.pop()
+                if "acceptance-table" in popped:
+                    self._accept_tbl_depth -= 1
             if tag == "tr" and self._in_tr:
-                # codex P1-1：统一稳健取法 = 最后两列永远是 scenario + expected_result，
-                # 前面任意多列是R-ID/A-ID等元信息，不再依赖3/4列硬下标
                 if len(self._cur_cells) >= 3 and self._cur_rid:
+                    # codex P1-1：最后两列永远是 scenario + expected_result
                     scenario = self._cur_cells[-2].strip()
                     exp_res = self._cur_cells[-1].strip()
                     rows.append((self._cur_aid, self._cur_rid, scenario, exp_res))
@@ -523,8 +557,9 @@ def _parse_prd_html_acceptance(prd_path: Path):
     _P().feed(content)
     if not rows:
         raise ValueError(
-            "PRD 中没有找到验收条件表行。验收表行必须写 data-requirement-id='R-xxx'，"
-            "同一 R 多 A 同时写 data-acceptance-id='A-xxx'，且不能带 data-preview 属性（data-preview 是详细方案表专用）。"
+            "PRD 中没有找到验收条件表行。"
+            "验收表必须用 class='acceptance-table' 的 <table> 包裹，"
+            "每tbody行必须写 data-requirement-id='R-xxx'，同一R多A时加 data-acceptance-id='A-xxx'。"
         )
     return rows
 
@@ -550,10 +585,27 @@ def _sync_acceptance_from_prd(state: dict, prd_path: Path) -> int:
         if not scenario or not exp_res:
             raise ValueError(f"PRD 行 {rid}（A={aid}）scenario / expected_result 为空，不允许写空")
 
+        # codex P1-2：PRD 行显式写了 data-acceptance-id=xxx 时，必须 100% 严格匹配：
+        #   (1) 该 A-xxx 必须在档案 acceptance[] 存在；(2) A-xxx.requirement_id 必须 == PRD行的R-ID
+        # 不满足直接抛错停止同步，绝不回退匹配，防止写错 ID 静默覆盖正确验收
         target = None
-        if aid and aid in aid_to_a:
-            target = aid_to_a[aid]
+        if aid:
+            explicit_a = aid_to_a.get(aid)
+            if explicit_a is None:
+                raise ValueError(
+                    f"PRD 验收行显式写了 data-acceptance-id='{aid}'，但需求档案 acceptance[] 中找不到 ID='{aid}'。"
+                    f"要么在 acceptance[] 先补 {aid}，要么把 PRD 里的 A-ID 改对。写错 A-ID 会静默覆盖别的验收，**禁止回退匹配**。"
+                    f"上下文：行 R={rid} scenario='{scenario[:30]}…'"
+                )
+            if explicit_a.get("requirement_id") != rid:
+                raise ValueError(
+                    f"PRD 验收行 data-acceptance-id='{aid}' 的 requirement_id={explicit_a.get('requirement_id')!r}，"
+                    f"与 PRD 行 data-requirement-id='{rid}' 不一致。"
+                    f"A-xxx 必须归属于正确的 R-xxx，禁止张冠李戴。"
+                )
+            target = explicit_a
         else:
+            # PRD行没写A-ID（1R对应唯一A的简单情况）→ 允许用scenario模糊匹配
             candidates = rid_to_many.get(rid, [])
             for cand in candidates:
                 if cand.get("scenario") and cand["scenario"].strip() == scenario:
@@ -773,53 +825,58 @@ def main() -> int:
         print("      📋 引用一致性 OK；stage 规则 OK；A-xxx 字段完整；metrics.baseline_plan 全填")
         return 0
 
+    working = copy.deepcopy(state)
     changed = False
 
-    if args.push_stage:
-        reason = _check_stage_push(state.get("stage", "discovery"), args.push_stage, state)
-        if reason:
-            parser.exit(1, f"STAGE BLOCK：{reason}\n")
-        old_stage = state.get("stage")
-        state["stage"] = args.push_stage
-        changed = True
-        print(f"[stage] {old_stage} → {args.push_stage}（前置条件校验通过）")
-        if not args.add_decision:
-            auto = (f"stage 自动推进：{old_stage} → {args.push_stage}，"
-                    f"基于：open_questions={len(state.get('open_questions',[]))}；"
-                    f"artifacts 已登记 {len(state.get('artifacts',{}))} 件")
-            _add_decision(state, auto, [], args.choice, args.next_action, args.decided_by)
-            changed = True
-            print(f"[decision] 自动新增 D-{len(state['decisions']):03d}（stage 推进记录）")
-
+    # 先把本次所有输入应用到候选状态，再检查 stage 的最终状态。
+    # 这样关闭阶段校验看到的是本次 --add-decision / PRD 同步后的数据，
+    # 失败时只丢弃候选对象，磁盘上的需求档案保持原样。
     if args.add_decision:
         basis = [s.strip() for s in args.basis_ids.split(",") if s.strip()]
-        _add_decision(state, args.add_decision, basis, args.choice, args.next_action, args.decided_by)
+        _add_decision(working, args.add_decision, basis, args.choice, args.next_action, args.decided_by)
         changed = True
-        print(f"[decision] 新增 D-{len(state['decisions']):03d}（{args.decided_by}）")
+        print(f"[decision] 新增 D-{len(working['decisions']):03d}（{args.decided_by}）")
 
     if args.sync_acceptance_from_prd:
         prd_path = (record_path.parent / args.sync_acceptance_from_prd).resolve()
         if not prd_path.is_file():
             parser.exit(1, f"PRD HTML 不存在：{prd_path}\n")
         try:
-            n = _sync_acceptance_from_prd(state, prd_path)
+            n = _sync_acceptance_from_prd(working, prd_path)
         except ValueError as exc:
             parser.exit(1, f"SYNC ACCEPTANCE BLOCK：{exc}\n")
         changed = True
         counts = {"P0": 0, "P1": 0}
         cats: dict[str, int] = {}
-        for a in state.get("acceptance", []):
+        for a in working.get("acceptance", []):
             counts[a.get("priority", "P?")] = counts.get(a.get("priority", "P?"), 0) + 1
             cats[a.get("category", "?")] = cats.get(a.get("category", "?"), 0) + 1
         print(f"[acceptance] 从 PRD 同步更新 {n} 条 A-xxx：P0={counts.get('P0',0)} P1={counts.get('P1',0)}；分类 {cats}")
 
+    if args.push_stage:
+        old_stage = state.get("stage", "discovery")
+        if old_stage == "measured" and args.push_stage == "closed" and not args.add_decision:
+            parser.exit(1, "STAGE BLOCK：measured → closed 必须通过 --add-decision 提供明确决策及数据依据\n")
+        reason = _check_stage_push(old_stage, args.push_stage, working)
+        if reason:
+            parser.exit(1, f"STAGE BLOCK：{reason}\n")
+        working["stage"] = args.push_stage
+        changed = True
+        print(f"[stage] {old_stage} → {args.push_stage}（最终状态校验通过）")
+        if not args.add_decision:
+            auto = (f"stage 自动推进：{old_stage} → {args.push_stage}，"
+                    f"基于：open_questions={len(working.get('open_questions',[]))}；"
+                    f"artifacts 已登记 {len(working.get('artifacts',{}))} 件")
+            _add_decision(working, auto, [], args.choice, args.next_action, args.decided_by)
+            print(f"[decision] 自动新增 D-{len(working['decisions']):03d}（stage 推进记录）")
+
     if changed:
-        errs = audit(state)
+        errs = audit(working)
         if errs:
             parser.exit(1, "落盘前 AUDIT 失败，本次更新未写入，请先修复：\n  · " +
                         "\n  · ".join(errs) + "\n")
-        state.pop("__record_dir__", None)
-        _save_record(record_path, state)
+        working.pop("__record_dir__", None)
+        _save_record(record_path, working)
         print(f"[saved] {record_path}")
     else:
         print("（--update 模式下没有传 --push-stage / --add-decision / --sync-acceptance-from-prd，没做任何改动）")

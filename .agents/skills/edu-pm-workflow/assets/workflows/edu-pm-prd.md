@@ -122,7 +122,7 @@ description: PM需求产出工作流：输入需求描述，产出PRD+原型+流
 
 1. 将 PRD 保存到 `REQ_DIR/需求文档/[需求名]-PRD.html`。`REQ_DIR` 由需求档案定位；配置了 `artifact_root` 时，不能把路径仍当作项目根下一级。产出后登记 `artifacts.prd`，并在项目信息填入稳定 `requirement_id`。
 2. HTML中内嵌所有CSS，无需外部依赖，确保脱机可用
-3. 需求目标表每个指标行写 `data-metric-id="M-*"`，详细方案每个页面/状态行写 `data-requirement-id="R-*"` 并保留 `data-preview`；这些 ID 与档案一致，供验收和复盘定位。
+3. 需求目标表每个指标行写 `data-metric-id="M-*"`，详细方案每个页面/状态行写 `data-requirement-id="R-*"` 并保留 `data-preview`。PRD 验收条件使用唯一的 `<table class="acceptance-table">`：每个数据行写档案中已有的 `data-requirement-id="R-*"`；同一 R 对应多条 A 时，再写 `data-acceptance-id="A-*"`。表格最后两列固定为验收场景、可观察的预期结果。这些 ID 与档案一致，供验收和复盘定位。
 
 ### 2.2 PRD结构（固定顺序，按需求裁剪）
 
@@ -2797,7 +2797,15 @@ python3 scripts/pm_requirement.py --help | grep -E "update|audit"
 
 ### 7.1 回写验收清单 A-xxx（阻塞）
 
-把 PRD「3.10 产品边界验收条件」表格（或对应版本中的验收场景表）的内容，逐行写入需求档案的 acceptance[]。
+把 PRD「详细方案」内的验收条件表逐行写入需求档案的 acceptance[]。该表必须是唯一一张 `<table class="acceptance-table">`；脚本不会从功能清单、详细方案或其他普通表格猜测哪些行是验收项。
+
+**验收表结构契约**：
+
+- 每个数据行带 `data-requirement-id="R-xxx"`，且该 R 已存在于需求档案 `requirements[]`。
+- 同一 R 对应多条验收项时，每行都显式带 `data-acceptance-id="A-xxx"`，且 A 已存在于 `acceptance[]` 并归属该 R。一个 R 只对应一条 A 时可省略 A-ID，由脚本按唯一关系匹配。
+- 至少三列；最后两列依次是「验收场景」和「可观察的预期结果」。其他列可用于展示 A-ID、R-ID 等信息。
+- **迁移旧 PRD**：保留原有验收内容，在对应验收表上添加 `acceptance-table` class，为每个数据行补齐 R-ID；若一个 R 有多条 A，再补 A-ID。确认最后两列分别是场景和预期结果后再同步。不要给需求概述表或详细方案功能表添加这个 class。
+- 验收表结构由 `validate_prd.py` 检查；缺表、R/A ID 格式错误、列不足或场景/预期结果为空都会阻塞 PRD 校验。
 
 **运行命令**（替换 `<需求名>` 为实际名称，路径相对于需求目录）：
 
@@ -2809,14 +2817,14 @@ python3 scripts/pm_requirement.py --project . --name "<需求名>" \
 
 **自动行为规则**（脚本强制遵守，不可改）：
 
-1. **ID 严格一一对应**：PRD 表格行有 `data-requirement-id="R-xxx"` 的，匹配已有 A-xxx 中 `requirement_id == R-xxx` 的那一条，绝对不新建、不重排、不胡乱配对。
+1. **按 R/A ID 严格对应**：显式写了 `data-acceptance-id` 的行必须匹配已有同 ID、且 `requirement_id` 等于该行 R-ID 的 A；未写 A-ID 时，仅允许匹配同一 R 下场景完全相同的 A，或该 R 唯一的一条 A。脚本不新建、不重排、不胡乱配对。
 2. **写入字段**：
    - `scenario` ← 验收场景列（例：「当前测试空间的费用报销未配置」）
    - `expected_result` ← 可观察的预期结果列
    - `category` 自动打标签：含「权限/未接入/未配置/部分完成/结果未知/超时」→ `边界异常`；含「目录/版本/发布/暂停」→ `平台配置`；其余 → `核心流程`
    - `priority` 自动打标签：通用核心或含「不调用写入/不宣称成功」硬边界 → `P0`；其余 → `P1`
 3. **阻塞自检**（任一失败即报错不写入）：
-   - A 的数量 = PRD 验收表的行数；
+   - PRD 验收表每行必须成功对应一条 A，更新数 = 表格数据行数；
    - 每条 A 至少有 `scenario` 和 `expected_result`，空任一字段就报错定位到哪条缺内容；
    - 任一个 `data-requirement-id` 在 requirements[] 里找不到对应 R-xxx 就报错。
 
@@ -2834,7 +2842,7 @@ python3 scripts/pm_requirement.py --project . --name "<需求名>" \
 | defined       | ① **带 BLOCKING 标签（labels/tags/priority 任一字段包含大写 BLOCKING）的 open_questions 必须全部 status==closed**（不再要求数量下限或关闭率，80%比例移除；不挂 BLOCKING 的小问题允许带入 ready）；② requirements[] 中 ≥ 1 条有真实接入证据（sources.classification == evidence 且不是 demo）；③ 目标指标 baseline_plan 全部填了 | ready    |
 | ready         | ① 所有 P0 验收 passed；② P0/P1 级验收不得有未通过（只允许 P2/P3 遗留）；③ 整体验收通过率 ≥ 80%（即使只有 1 条也 100%，不再有 <3 条跳过）                                                                                                                                                                | shipped  |
 | shipped       | ① 上线后 ≥ 1 周真实数据；② metrics.result 至少填了 ≥ ceil(1/3 × 指标总数) 条主要指标（可以其余留空）；③ metrics[] 不得为空，至少登记 1 个可观测指标                                                                                                                                                      | measured |
-| measured      | ① 产品+业务+数据三方已就「继续 / 迭代 / 停止」作出明确决定并记录在 D-xxx（choice ∈ {continue,iterate,stop}，decision 文本非空）；② 最后一条决策的 basis_ids[] 至少挂 1 个 M-xxx / D-xxx / Q-xxx 数据引用 ID（不允许空口拍决策，必须有数据证据）；③ 遗留技术债或迭代项单独立了需求        | closed   |
+| measured      | ① 产品+业务+数据三方已就「继续 / 迭代 / 停止」作出明确决定并记录在 D-xxx（choice ∈ {continue,iterate,stop}，decision 文本非空）；② 本次推进命令必须显式附 `--add-decision` 和 `--basis-ids`，最后一条决策至少引用一个真实存在的 M/D/Q/A/R/SRC ID，M ID 必须有实采 result；③ 遗留技术债或迭代项单独立了需求 | closed   |
 
 **运行命令**（如果条件满足，加 `--push-stage` 并附决策说明）：
 
@@ -2845,6 +2853,13 @@ python3 scripts/pm_requirement.py --project . --name "<需求名>" \
   --push-stage defined \
   --add-decision "PRD v0.4 已写范围块/不做块，open_questions=12 条，2 条纵向样板原型就绪；从 discovery → defined" \
   --decided-by "产品团队"
+
+# 例：measured → closed 必须在同一命令提供本次决策和真实依据
+python3 scripts/pm_requirement.py --project . --name "<需求名>" \
+  --update --push-stage closed \
+  --add-decision "根据 M-001 实采结果，决定继续迭代" \
+  --choice continue --basis-ids M-001 \
+  --decided-by "产品+业务+数据评审"
 ```
 
 **硬边界**（脚本强制拒绝）：
@@ -2856,7 +2871,7 @@ python3 scripts/pm_requirement.py --project . --name "<需求名>" \
 
 本轮如果做了以下**任一**事情，必须追加至少 1 条 D-xxx，不允许跳过：
 
-1. stage 推进了（7.2 执行过 `--push-stage`，`--add-decision` 已自动加 D-xxx）；
+1. stage 推进了（7.2 执行过 `--push-stage`；普通推进可由脚本自动记录 D-xxx，measured → closed 必须显式提供带有效依据的 `--add-decision`）；
 2. 范围块「本期不做什么」新增 / 删除 ≥ 1 条（手动追加）；
 3. 从原型/客户端观察确认了任何新业务规则（如「报销当次空间未配置」「教育只有计划名称必填」，手动追加）。
 

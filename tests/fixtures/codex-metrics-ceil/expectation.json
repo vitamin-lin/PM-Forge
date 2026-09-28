@@ -1,0 +1,6 @@
+{
+  "push_stage": {
+    "from": "shipped", "to": "measured",
+    "expected_error_contains": ["ceil(5/3)=2"]
+  }
+}
